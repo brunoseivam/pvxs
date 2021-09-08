@@ -40,6 +40,8 @@
 #  endif
 #endif
 
+#include <epicsThread.h>
+
 namespace pvxs {namespace impl {
 
 //! in-line string builder (eg. for exception messages)
@@ -51,6 +53,9 @@ struct SB {
     template<typename T>
     SB& operator<<(const T& i) { strm<<i; return *this; }
 };
+
+
+void threadOnce(epicsThreadOnceId *id, EPICSTHREADFUNC fn, void *arg);
 
 namespace idetail {
 template <typename I>
