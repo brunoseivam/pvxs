@@ -12,6 +12,7 @@
 #include <pvxs/log.h>
 #include <pvxs/server.h>
 #include <pvxs/source.h>
+#include <pvxs/client.h>
 #include <pvxs/iochooks.h>
 
 #include <iocsh.h>
@@ -23,14 +24,15 @@
 using namespace pvxs;
 
 namespace {
-std::atomic<server::Server*> instance{};
+std::atomic<server::Server*> gblSrv{};
+std::atomic<client::Context*> gblCli{};
 
 DEFINE_LOGGER(log, "pvxs.ioc");
 
 void pvxsl(int detail)
 {
     try {
-        if(auto serv = instance.load()) {
+        if(auto serv = gblSrv.load()) {
             for(auto& pair : serv->listSource()) {
                 auto src = serv->getSource(pair.first);
                 if(!src)
@@ -61,7 +63,7 @@ void pvxsl(int detail)
 void pvxsr(int detail)
 {
     try {
-        if(auto serv = instance.load()) {
+        if(auto serv = gblSrv.load()) {
             std::ostringstream strm;
             Detailed D(strm, detail);
             strm<<*serv;
@@ -172,8 +174,8 @@ struct Reg {
 void pvxsAtExit(void* unused)
 {
     try {
-        if(auto serv = instance.load()) {
-            if(instance.compare_exchange_strong(serv, nullptr)) {
+        if(auto serv = gblSrv.load()) {
+            if(gblSrv.compare_exchange_strong(serv, nullptr)) {
                 // take ownership
                 std::unique_ptr<server::Server> trash(serv);
                 trash->stop();
@@ -189,19 +191,22 @@ void pvxsInitHook(initHookState state)
 {
     try {
         // iocBuild()
+        if(state==initHookAfterCaLinkInit) {
+
+        }
         if(state==initHookAfterInitDatabase) {
             // we want to run before exitDatabase
             epicsAtExit(&pvxsAtExit, nullptr);
         }
         // iocRun()/iocPause()
         if(state==initHookAfterCaServerRunning) {
-            if(auto serv = instance.load()) {
+            if(auto serv = gblSrv.load()) {
                 serv->start();
                 log_debug_printf(log, "Started Server %p", serv);
             }
         }
         if(state==initHookAfterCaServerPaused) {
-            if(auto serv = instance.load()) {
+            if(auto serv = gblSrv.load()) {
                 serv->stop();
                 log_debug_printf(log, "Stopped Server %p", serv);
             }
@@ -220,18 +225,32 @@ void pvxsRegistrar()
         Reg<int>("pvxsr", "detail").ister<&pvxsr>();
         Reg<>("pvxs_target_info").ister<&pvxs_target_info>();
 
-        auto serv = instance.load();
-        if(!serv) {
-            std::unique_ptr<server::Server> temp(new server::Server(server::Config::from_env()));
+        if(auto serv = gblSrv.load()) {
+            log_err_printf(log, "Stale Server? %p\n", serv);
 
-            if(instance.compare_exchange_strong(serv, temp.get())) {
+        } else {
+            std::unique_ptr<server::Server> temp(new server::Server(server::Server::fromEnv()));
+
+            if(gblSrv.compare_exchange_strong(serv, temp.get())) {
                 log_debug_printf(log, "Installing Server %p\n", temp.get());
                 temp.release();
             } else {
-                log_crit_printf(log, "Race installing Server? %p\n", serv);
+                log_crit_printf(log, "Race installing Server? %p\n", gblSrv.load());
             }
+        }
+
+        if(auto cli = gblCli.load()) {
+            log_err_printf(log, "Stale Client? %p\n", cli);
+
         } else {
-            log_err_printf(log, "Stale Server? %p\n", serv);
+            std::unique_ptr<client::Context> temp(new client::Context(client::Context::fromEnv()));
+
+            if(gblCli.compare_exchange_strong(cli, temp.get())) {
+                log_debug_printf(log, "Installing Client %p\n", temp.get());
+                temp.release();
+            } else {
+                log_crit_printf(log, "Race installing Client? %p\n", gblCli.load());
+            }
         }
 
         initHookRegister(&pvxsInitHook);
@@ -247,10 +266,19 @@ namespace ioc {
 
 server::Server server()
 {
-    if(auto serv = instance.load()) {
+    if(auto serv = gblSrv.load()) {
         return *serv;
     } else {
-        throw std::logic_error("No Instance");
+        throw std::logic_error("No Server Instance");
+    }
+}
+
+client::Context client()
+{
+    if(auto cli = gblCli.load()) {
+        return *cli;
+    } else {
+        throw std::logic_error("No Client Instance");
     }
 }
 

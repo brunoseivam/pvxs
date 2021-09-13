@@ -7,6 +7,8 @@
 #define PVXS_IOCHOOKS_H
 
 #include <pvxs/version.h>
+#include <pvxs/server.h>
+#include <pvxs/client.h>
 
 #if defined(_WIN32) || defined(__CYGWIN__)
 
@@ -28,9 +30,6 @@
 
 
 namespace pvxs {
-namespace server {
-class Server;
-}
 namespace ioc {
 
 /** Return the singleton Server instance which is setup
@@ -68,6 +67,14 @@ namespace ioc {
  */
 PVXS_IOC_API
 server::Server server();
+
+/** Return the singleton client Context instance which is setup
+ *  for use in an IOC process.
+ *
+ * @since UNRELEASED
+ */
+PVXS_IOC_API
+client::Context client();
 
 }} // namespace pvxs::ioc
 
