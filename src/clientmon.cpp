@@ -65,6 +65,7 @@ struct SubscriptionImpl : public OperationBase, public Subscription
 
     std::deque<Entry> queue;
     uint32_t window =0u, unack =0u;
+    uint32_t nDrop =0u;
     // user code has seen pop()==nullptr
     bool needNotify = true;
 
@@ -129,7 +130,13 @@ struct SubscriptionImpl : public OperationBase, public Subscription
         });
     }
 
-    virtual Value pop() override final
+    void _stats(Stats *pstats) const {
+        pstats->maxQueue = queueSize;
+        pstats->nDrop = nDrop;
+        pstats->nQueue = queue.size();
+    }
+
+    virtual Value pop(Stats *pstats) override final
     {
         Value ret;
         {
@@ -155,6 +162,10 @@ struct SubscriptionImpl : public OperationBase, public Subscription
                     unack++;
                 }
 
+                if(pstats) {
+                    _stats(pstats);
+                }
+
                 log_info_printf(monevt, "channel '%s' monitor pop() %s\n",
                                 channelName.c_str(),
                                 ent.exc ? "exception" : ent.val ? "data" : "null!");
@@ -167,10 +178,21 @@ struct SubscriptionImpl : public OperationBase, public Subscription
             } else {
                 needNotify = true;
 
+                if(pstats) {
+                    _stats(pstats);
+                }
+
                 log_info_printf(monevt, "channel '%s' monitor pop() empty\n",
                                 channelName.c_str());
             }
         }
+        return ret;
+    }
+
+    virtual Stats stats() const override final {
+        Stats ret;
+        Guard G(lock);
+        _stats(&ret);
         return ret;
     }
 
@@ -406,6 +428,7 @@ void Connection::handle_MONITOR()
         from_wire_type(M, rxRegistry, data);
 
     RequestInfo* info=nullptr;
+    bool servSquash = false;
     if(M.good()) {
         auto it = opByIOID.find(ioid);
         if(it!=opByIOID.end()) {
@@ -441,7 +464,15 @@ void Connection::handle_MONITOR()
 
             BitMask overrun;
             from_wire(M, overrun);
-            (void)overrun; // ignoring
+            for(auto i : range(overrun.wsize())) {
+                (void)i;
+                if(overrun.word(i)) {
+                    // this update Value is the result of combining
+                    // two or more Values on the server side.
+                    servSquash = true;
+                    break;
+                }
+            }
         }
     }
 
@@ -525,59 +556,63 @@ void Connection::handle_MONITOR()
     }
 
     bool notify = false;
-    if(init && !sts.isSuccess()) {
-        log_debug_printf(io, "Server %s channel %s monitor PUSH init error\n",
-                        peerName.c_str(),
-                        mon->chan->name.c_str());
-
+    {
         Guard G(mon->lock);
-
-        mon->queue.emplace_back(std::move(update));
-        notify = true;
-
-    } else if(!init) {
-        Guard G(mon->lock);
-
-        if(mon->pipeline) {
-            if(mon->window) {
-                mon->window--;
-            } else {
-                log_err_printf(io, "Server %s channel '%s' MONITOR exceeds window size\n",
-                                peerName.c_str(), mon->chan->name.c_str());
-            }
-        }
-
-        notify = mon->queue.empty();
-
-        if(update.exc || (mon->queue.size() < mon->queueSize) || mon->queue.back().exc) {
-            log_debug_printf(io, "Server %s channel %s monitor PUSH\n",
+        if(init && !sts.isSuccess()) {
+            log_debug_printf(io, "Server %s channel %s monitor PUSH init error\n",
                             peerName.c_str(),
                             mon->chan->name.c_str());
 
             mon->queue.emplace_back(std::move(update));
+            notify = true;
 
-        } else if(update.val) {
-            log_debug_printf(io, "Server %s channel %s monitor Squash\n",
-                            peerName.c_str(),
-                            mon->chan->name.c_str());
+        } else if(!init) {
 
-            mon->queue.back().val.assign(update.val);
+            if(mon->pipeline) {
+                if(mon->window) {
+                    mon->window--;
+                } else {
+                    log_err_printf(io, "Server %s channel '%s' MONITOR exceeds window size\n",
+                                    peerName.c_str(), mon->chan->name.c_str());
+                }
+            }
+
+            notify = mon->queue.empty();
+
+            if(update.exc || (mon->queue.size() < mon->queueSize) || mon->queue.back().exc) {
+                log_debug_printf(io, "Server %s channel %s monitor PUSH\n",
+                                peerName.c_str(),
+                                mon->chan->name.c_str());
+
+                mon->queue.emplace_back(std::move(update));
+
+            } else if(update.val) {
+                log_debug_printf(io, "Server %s channel %s monitor Squash\n",
+                                peerName.c_str(),
+                                mon->chan->name.c_str());
+
+                mon->queue.back().val.assign(update.val);
+                mon->nDrop++;
+            }
+
+            if(final && !update.exc) {
+                log_debug_printf(io, "Server %s channel %s monitor FINISH\n",
+                                peerName.c_str(),
+                                mon->chan->name.c_str());
+
+                mon->queue.emplace_back(std::make_exception_ptr(Finished()));
+            }
+
+            if(mon->queue.empty()) {
+                log_err_printf(io, "Server %s channel '%s' monitor empty update!\n",
+                               peerName.c_str(), mon->chan->name.c_str());
+                notify = false;
+            }
         }
 
-        if(final && !update.exc) {
-            log_debug_printf(io, "Server %s channel %s monitor FINISH\n",
-                            peerName.c_str(),
-                            mon->chan->name.c_str());
-
-            mon->queue.emplace_back(std::make_exception_ptr(Finished()));
-        }
-
-        if(mon->queue.empty()) {
-            log_err_printf(io, "Server %s channel '%s' monitor empty update!\n",
-                           peerName.c_str(), mon->chan->name.c_str());
-            notify = false;
-        }
-    }
+        if(servSquash)
+            mon->nDrop++;
+    } // release mon->lock
 
     if(mon->state==SubscriptionImpl::Done || final) {
         mon->state=SubscriptionImpl::Done;

@@ -158,6 +158,15 @@ public:
 
 //! Handle for monitor subscription
 struct PVXS_API Subscription {
+    //! Statistics associated with a Subscription
+    struct Stats {
+        //! Number of events in the queue
+        size_t nQueue;
+        //! Number of Value updates dropped (squashed)
+        size_t nDrop;
+        //! Limit on queue size
+        size_t maxQueue;
+    };
 
     virtual ~Subscription() =0;
 
@@ -171,16 +180,18 @@ public:
     //! Blocks until any in-progress callback has completed.
     virtual bool cancel() =0;
 
-    //! Ask a server to stop sending updates to this Subscription
+    //! Ask a server to stop (true) or re-start (false), sending updates to this Subscription
     virtual void pause(bool p=true) =0;
     //! Shorthand for @code pause(false) @endcode
     inline void resume() { pause(false); }
 
     /** De-queue update from subscription event queue.
      *
-     *  If the queue is empty, return an empty/invalid Value (Value::valid()==false).
-     *  A data update is returned as a Value.
-     *  An error or special event is thrown.
+     * @param pstats If not NULL, will be filled in prior return or throw
+     *
+     * If the queue is empty, return an empty/invalid Value (Value::valid()==false).
+     * A data update is returned as a Value.
+     * An error or special event is thrown.
      *
      * @returns A valid Value until the queue is empty
      * @throws Connected (depending on MonitorBuilder::maskConnected())
@@ -193,17 +204,25 @@ public:
      * std::shared_ptr<Subscription> sub(...);
      * try {
      *     while(auto update = sub.pop()) {
+     *         // have data update
      *         ...
      *     }
-     * } catch(Connected& con) {
-     * } catch(Finished& con) {
-     * } catch(Disconnect& con) {
-     * } catch(RemoteError& con) {
-     * } catch(std::exception& con) {
+     *     // queue empty
+     * } catch(Connected& con) {   // if MonitorBuilder::maskConnected(false)
+     * } catch(Finished& con) {    // if MonitorBuilder::maskDisconnected(false)
+     * } catch(Disconnect& con) {  // if MonitorBuilder::maskDisconnected(false)
+     * } catch(RemoteError& con) { // error message from server
+     * } catch(std::exception& con) { // client side error
      * }
      * @endcode
+     *
+     * @since UNRELEASED Added pstats argument
      */
-    virtual Value pop() =0;
+    virtual Value pop(Stats *pstats=nullptr) =0;
+
+    //! Poll statistics
+    //! @since UNRELEASED
+    virtual Stats stats() const =0;
 
 protected:
     virtual void _onEvent(std::function<void(Subscription&)>&&) =0;
