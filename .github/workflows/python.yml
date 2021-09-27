@@ -108,6 +108,11 @@ jobs:
       - name: Automatic core dumper analysis
         uses: mdavidsaver/ci-core-dumper@master
 
+      - name: "System information"
+        if: runner.os == 'Linux'
+        run: |
+          export PATH="/sbin:/usr/sbin:$PATH"
+          ifconfig || ( ip link && ip addr ) || true
 
       - name: Setup native python
         if: matrix.python
@@ -282,6 +287,12 @@ jobs:
       - uses: actions/checkout@v2
         with:
           submodules: recursive
+
+      - name: "System information"
+        if: runner.os == 'Linux'
+        run: |
+          export PATH="/sbin:/usr/sbin:$PATH"
+          ifconfig || ( ip link && ip addr ) || true
 
       - name: Setup native python
         uses: actions/setup-python@v2

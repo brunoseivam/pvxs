@@ -20,7 +20,7 @@ env:
   SETUP_PATH: .ci-local
   CMP: gcc
   _PVXS_ABORT_ON_CRIT: 1
-  PVXS_LOG: pvxs.*=WARN
+  PVXS_LOG: pvxs.*=DEBUG
 
 jobs:
   native:
@@ -125,6 +125,11 @@ jobs:
       if: runner.os == 'Linux'
     - name: Automatic core dumper analysis
       uses: mdavidsaver/ci-core-dumper@master
+    - name: "System information"
+      if: runner.os == 'Linux'
+      run: |
+        export PATH="/sbin:/usr/sbin:$PATH"
+        ifconfig || ( ip link && ip addr ) || true
     - name: Prepare and compile dependencies
       run: python .ci/cue.py prepare
     - name: Build libevent
@@ -197,7 +202,7 @@ jobs:
             dnf -y "$@" || yum -y "$@"
             return $?
         }
-        dnfyum install python3 gdb make perl gcc-c++ glibc-devel readline-devel ncurses-devel perl-devel libevent-devel
+        dnfyum install python3 gdb make perl gcc-c++ glibc-devel readline-devel ncurses-devel perl-devel libevent-devel net-tools
         git --version || dnfyum install git
         # rather than just bite the bullet and link python3 -> python,
         # people would rather just break all existing scripts...
@@ -208,6 +213,10 @@ jobs:
         submodules: true
     - name: Automatic core dumper analysis
       uses: mdavidsaver/ci-core-dumper@master
+    - name: "System information"
+      if: runner.os == 'Linux'
+      run: |
+        /usr/sbin/ifconfig
     - name: Prepare and compile dependencies
       run: python .ci/cue.py prepare
     - name: Build main module
