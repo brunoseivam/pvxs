@@ -462,6 +462,32 @@ void Value::copyOut(void *ptr, StoreType type) const
             // structure extract self
             *reinterpret_cast<Value*>(ptr) = *this;
             return;
+
+        } else if(desc->id=="enum_t") {
+            // special case handling for NTEnum
+            switch(type) {
+            case StoreType::Integer:
+                *reinterpret_cast<int64_t*>(ptr) = (*this)["value.index"].as<int64_t>();
+                return;
+
+            case StoreType::UInteger:
+                *reinterpret_cast<uint64_t*>(ptr) = (*this)["value.index"].as<uint64_t>();
+                return;
+
+            case StoreType::String: {
+                auto index = (*this)["value.index"].as<uint64_t>();
+                auto choices = (*this)["value.choices"].as<shared_array<const std::string>>();
+                if(index < choices.size()) {
+                    *reinterpret_cast<std::string*>(ptr) = choices[index];
+                    return;
+
+                } else {
+                    throw NoConvert(SB()<<"enum_t index "<<index<<" out of range for "<<choices.size());
+                }
+            }
+            default:
+                break;
+            }
         }
         break;
     }
