@@ -26,6 +26,18 @@ namespace detail {
 class CommonBase;
 }} // namespace client::detail
 
+/** Specialization point for extracting field value(s) from a Value into a user type.
+ *
+ */
+template<typename T>
+T extract(const Value&);
+
+/** Specialization point for inserting field value(s) into a Value from a user type.
+ *
+ */
+template<typename T>
+void store(Value&, const T&);
+
 //! selector for union FieldStorage::store
 enum struct StoreType : uint8_t {
     Null,     //!< no associate storage
@@ -606,25 +618,20 @@ public:
      */
     template<typename T>
     inline T as() const {
-        typename impl::StoreAs<T>::store_t ret;
-        copyOut(&ret, impl::StoreAs<T>::code);
-        return impl::StoreTransform<T>::out(ret);
+        return ::pvxs::extract<T>(*this);
     }
 
     //! Attempt to extract value from field.
     //! @returns false if as<T>() would throw NoField or NoConvert
     template<typename T>
     inline bool as(T& val) const {
-        typename impl::StoreAs<T>::store_t temp;
-        auto ret = tryCopyOut(&temp, impl::StoreAs<T>::code);
-        if(ret) {
-            try {
-                val = impl::StoreTransform<T>::out(temp);
-            }catch(std::exception&){
-                ret = false;
-            }
+        try {
+            val = this->as<T>();
+            return true;
+        }catch(NoField&){
+        }catch(NoConvert&){
         }
-        return ret;
+        return false;
     }
 
     //! Attempt to extract value from field.
@@ -632,18 +639,9 @@ public:
     //! of the provided function.
     template<typename T, typename FN>
     typename impl::StorageMap<typename std::decay<FN>::type>::not_storable as(FN&& fn) const {
-        typename impl::StoreAs<T>::store_t val;
-        if(tryCopyOut(&val, impl::StoreAs<T>::code)) {
-            fn(impl::StoreTransform<T>::out(val));
-        }
-    }
-
-    //! Attempt to assign to field.
-    //! @returns false if from<T>() would throw NoField or NoConvert
-    template<typename T>
-    inline bool tryFrom(const T& val) {
-        const typename impl::StoreAs<T>::store_t& norm(impl::StoreTransform<T>::in(val));
-        return tryCopyIn(&norm, impl::StoreAs<T>::code);
+        T arg;
+        if(this->as(arg))
+            fn(arg);
     }
 
     /** Assign from field.
@@ -660,8 +658,20 @@ public:
      */
     template<typename T>
     void from(const T& val) {
-        const typename impl::StoreAs<T>::store_t& norm(impl::StoreTransform<T>::in(val));
-        copyIn(&norm, impl::StoreAs<T>::code);
+        ::pvxs::store(*this, val);
+    }
+
+    //! Attempt to assign to field.
+    //! @returns false if from<T>() would throw NoField or NoConvert
+    template<typename T>
+    inline bool tryFrom(const T& val) {
+        try {
+            this->from(val);
+            return true;
+        }catch(NoField&){
+        }catch(NoConvert&){
+        }
+        return false;
     }
 
     //! Inline assignment of sub-field.
@@ -790,6 +800,19 @@ public:
      */
     inline Fmt format() const { return Fmt(this); }
 };
+
+template<typename T>
+T extract(const Value& v) {
+    typename impl::StoreAs<T>::store_t ret;
+    v.copyOut(&ret, impl::StoreAs<T>::code);
+    return impl::StoreTransform<T>::out(ret);
+}
+
+template<typename T>
+void store(Value& v, const T& val) {
+    const typename impl::StoreAs<T>::store_t& norm(impl::StoreTransform<T>::in(val));
+    v.copyIn(&norm, impl::StoreAs<T>::code);
+}
 
 template<typename T>
 struct Value::_Iterator : private T

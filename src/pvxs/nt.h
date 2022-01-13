@@ -9,8 +9,6 @@
 #include <pvxs/version.h>
 #include <pvxs/data.h>
 
-struct epicsTimeStamp; // epicsTime.h
-
 namespace pvxs {
 namespace nt {
 
@@ -158,5 +156,28 @@ public:
 };
 
 }} // namespace pvxs::nt
+
+
+// epicsTime.h
+struct epicsTimeStamp;
+class epicsTime;
+
+namespace pvxs {
+
+template<>
+PVXS_API
+epicsTimeStamp extract<epicsTimeStamp>(const Value&);
+template<>
+PVXS_API
+void store<epicsTimeStamp>(Value&, const epicsTimeStamp&);
+
+template<>
+PVXS_API
+epicsTime extract<epicsTime>(const Value&);
+template<>
+PVXS_API
+void store<epicsTime>(Value&, const epicsTime&);
+
+} // namespace pvxs
 
 #endif // PVXS_NT_H

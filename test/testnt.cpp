@@ -11,6 +11,20 @@
 #include <pvxs/unittest.h>
 #include <pvxs/nt.h>
 
+#include <epicsTime.h>
+
+#if EPICS_VERSION_INT < VERSION_INT(7,0,6,1)
+static
+std::ostream& operator<<(std::ostream& strm, const epicsTime& ts)
+{
+    char temp[64];
+
+    (void)ts.strftime(temp, sizeof(temp), "%Y-%m-%d %H:%M:%S.%09f");
+    temp[sizeof(temp)-1u] = '\0';
+    return strm<<temp;
+}
+#endif
+
 namespace {
 
 using namespace pvxs;
@@ -82,13 +96,28 @@ void testNTEnum()
     testTrue(top.idStartsWith("epics:nt/NTEnum:"))<<"\n"<<top;
 }
 
+void test_time_t()
+{
+    testDiag("In %s", __func__);
+
+    auto top(nt::TimeStamp{}.build().create());
+    const auto now(epicsTime::getCurrent());
+
+    top = now;
+    auto ets(top.as<epicsTimeStamp>());
+
+    testEq(now, ets);
+    testEq(ets.secPastEpoch, top["secondsPastEpoch"].as<uint32_t>() - POSIX_TIME_AT_EPICS_EPOCH);
+}
+
 } // namespace
 
 MAIN(testnt) {
-    testPlan(18);
+    testPlan(20);
     testNTScalar();
     testNTNDArray();
     testNTURI();
     testNTEnum();
+    test_time_t();
     return testDone();
 }

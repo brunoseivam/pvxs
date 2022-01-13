@@ -6,6 +6,8 @@
 
 #include <pvxs/nt.h>
 
+#include <epicsTime.h>
+
 namespace pvxs {
 namespace nt {
 
@@ -20,6 +22,40 @@ TypeDef TimeStamp::build()
                 });
     return def;
 }
+
+} // namespace nt
+
+
+template<>
+epicsTimeStamp extract<epicsTimeStamp>(const Value& v)
+{
+    epicsTimeStamp ret{};
+    ret.secPastEpoch = v["secondsPastEpoch"].as<uint32_t>() - POSIX_TIME_AT_EPICS_EPOCH;
+    ret.nsec = v["nanoseconds"].as<uint32_t>();
+    return ret;
+}
+
+template<>
+void store<epicsTimeStamp>(Value& v, const epicsTimeStamp& t)
+{
+    v.update("secondsPastEpoch", t.secPastEpoch + POSIX_TIME_AT_EPICS_EPOCH)
+     .update("nanoseconds", t.nsec);
+}
+
+
+template<>
+epicsTime extract<epicsTime>(const Value& v)
+{
+    return epicsTime(extract<epicsTimeStamp>(v));
+}
+
+template<>
+void store<epicsTime>(Value& v, const epicsTime& t)
+{
+    store<epicsTimeStamp>(v, t);
+}
+
+namespace nt {
 
 TypeDef Alarm::build()
 {
