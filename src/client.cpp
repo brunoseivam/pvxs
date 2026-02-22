@@ -186,6 +186,7 @@ void Channel::disconnect(const std::shared_ptr<Channel>& self)
 
     state = Channel::Searching;
     sid = 0xdeadbeef; // spoil
+    permissions = 0x07;
 
     auto conns(connectors); // copy list
 
@@ -228,6 +229,8 @@ void Channel::disconnect(const std::shared_ptr<Channel>& self)
 
 Connect::~Connect() {}
 
+uint8_t Connect::permissions() const { return 0x07; }
+
 ConnectImpl::~ConnectImpl() {}
 
 const std::string& ConnectImpl::name() const
@@ -237,6 +240,12 @@ const std::string& ConnectImpl::name() const
 bool ConnectImpl::connected() const
 {
     return _connected.load(std::memory_order_relaxed);
+}
+uint8_t ConnectImpl::permissions() const
+{
+    if(chan)
+        return chan->permissions;
+    return 0x07;
 }
 
 std::shared_ptr<Connect> ConnectBuilder::exec()
@@ -250,6 +259,7 @@ std::shared_ptr<Connect> ConnectBuilder::exec()
     auto op(std::make_shared<ConnectImpl>(context->tcp_loop, _pvname));
     op->_onConn = std::move(_onConn);
     op->_onDis = std::move(_onDis);
+    op->_onACL = std::move(_onACL);
 
     std::shared_ptr<ConnectImpl> external(op.get(), [op, syncCancel](ConnectImpl*) mutable {
         // from user thread
@@ -336,6 +346,13 @@ void OperationBase::interrupt()
         waiter->complete(Result(), true);
 }
 
+uint8_t OperationBase::permissions() const
+{
+    if(chan)
+        return chan->permissions;
+    return 0x07;
+}
+
 RequestInfo::RequestInfo(uint32_t sid, uint32_t ioid, std::shared_ptr<OperationBase>& handle)
     :sid(sid)
     ,ioid(ioid)
@@ -396,7 +413,11 @@ std::shared_ptr<Channel> Channel::build(const std::shared_ptr<ContextImpl>& cont
 
 Operation::~Operation() {}
 
+uint8_t Operation::permissions() const { return 0x07; }
+
 Subscription::~Subscription() {}
+
+uint8_t Subscription::permissions() const { return 0x07; }
 
 Context Context::fromEnv()
 {

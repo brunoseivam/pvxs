@@ -79,6 +79,10 @@ struct PVXS_API SharedPV
      */
     void post(const Value& val);
 
+    //! Update per-channel access permissions for all connected clients.
+    //! Bit 0=PUT, Bit 1=PUT_GET, Bit 2=RPC.  Default 0x07 = full access.
+    void setPermissions(uint8_t permissions);
+
     //! query the internal data value and update the provided Value.
     void fetch(Value& val) const;
     //! Return a (shallow) copy of the internal data value

@@ -267,6 +267,10 @@ struct SubscriptionImpl final : public OperationBase, public Subscription
         return ret;
     }
 
+    virtual uint8_t permissions() const override final {
+        return OperationBase::permissions();
+    }
+
     virtual void _onEvent(std::function<void(Subscription&)>&& fn) override final {
         decltype (event) junk;
         loop.call([this, &junk, &fn]() {

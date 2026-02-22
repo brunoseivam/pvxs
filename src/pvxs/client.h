@@ -149,6 +149,10 @@ struct PVXS_API Operation {
     //! Queue an interruption of a wait() or wait(double) call.
     virtual void interrupt() =0;
 
+    //! Poll per-channel access permissions.
+    //! Bit 0=PUT, Bit 1=PUT_GET, Bit 2=RPC.  Default 0x07 = full access.
+    virtual uint8_t permissions() const;
+
 protected:
     virtual void _reExecGet(std::function<void(client::Result&&)>&& resultcb) =0;
     virtual void _reExecPut(const Value& arg, std::function<void(client::Result&&)>&& resultcb) =0;
@@ -189,6 +193,10 @@ protected:
 public:
     //! PV name
     inline const std::string& name() { return _name(); }
+
+    //! Poll per-channel access permissions.
+    //! Bit 0=PUT, Bit 1=PUT_GET, Bit 2=RPC.  Default 0x07 = full access.
+    virtual uint8_t permissions() const;
 
     //! Explicitly cancel a active subscription.
     //! Blocks until any in-progress callback has completed.
@@ -276,6 +284,9 @@ struct PVXS_API Connect {
     virtual const std::string& name() const =0;
     //! Poll (momentary) connection status
     virtual bool connected() const =0;
+    //! Poll per-channel access permissions.
+    //! Bit 0=PUT, Bit 1=PUT_GET, Bit 2=RPC.  Default 0x07 = full access.
+    virtual uint8_t permissions() const;
 };
 
 class GetBuilder;
@@ -927,6 +938,7 @@ class ConnectBuilder
     std::string _server;
     std::function<void()> _onConn;
     std::function<void()> _onDis;
+    std::function<void(uint8_t)> _onACL;
     bool _syncCancel = true;
 public:
     ConnectBuilder() {}
@@ -939,6 +951,9 @@ public:
     ConnectBuilder& onConnect(std::function<void()>&& cb) { _onConn = std::move(cb); return *this; }
     //! Handler to be invoked when channel becomes disconnected.
     ConnectBuilder& onDisconnect(std::function<void()>&& cb) { _onDis = std::move(cb); return *this; }
+    //! Handler to be invoked when per-channel access permissions change.
+    //! Bit 0=PUT, Bit 1=PUT_GET, Bit 2=RPC.
+    ConnectBuilder& onPermissions(std::function<void(uint8_t)>&& cb) { _onACL = std::move(cb); return *this; }
 
     /** Controls whether Connect::~Connect() synchronizes.
      *

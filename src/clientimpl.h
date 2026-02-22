@@ -61,6 +61,7 @@ struct OperationBase : public Operation
     virtual const std::string& name() override final;
     virtual Value wait(double timeout=-1.0) override final;
     virtual void interrupt() override final;
+    virtual uint8_t permissions() const override;
 };
 
 struct RequestFL {
@@ -134,6 +135,7 @@ public:
     CASE(CONNECTION_VALIDATED);
 
     CASE(SEARCH_RESPONSE);
+    CASE(ACL_CHANGE);
     CASE(CREATE_CHANNEL);
     CASE(DESTROY_CHANNEL);
 
@@ -161,6 +163,7 @@ struct ConnectImpl final : public Connect
     std::atomic<bool> _connected;
     std::function<void()> _onConn;
     std::function<void()> _onDis;
+    std::function<void(uint8_t)> _onACL;
 
     ConnectImpl(const evbase& loop, const std::string& name)
         :loop(loop)
@@ -171,6 +174,7 @@ struct ConnectImpl final : public Connect
 
     virtual const std::string &name() const override final;
     virtual bool connected() const override final;
+    virtual uint8_t permissions() const override final;
 };
 
 struct Channel {
@@ -208,6 +212,8 @@ struct Channel {
     std::map<uint32_t, RequestInfo*> opByIOID;
 
     std::list<ConnectImpl*> connectors;
+
+    uint8_t permissions = 0x07;
 
     size_t statTx{}, statRx{};
 

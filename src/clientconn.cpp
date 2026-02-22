@@ -336,6 +336,57 @@ void Connection::handle_CONNECTION_VALIDATED()
     }
 }
 
+void Connection::handle_ACL_CHANGE()
+{
+    EvInBuf M(peerBE, segBuf.get(), 16);
+
+    uint32_t cid = 0;
+    uint8_t permissions = 0;
+
+    from_wire(M, cid);
+    from_wire(M, permissions);
+
+    if(!M.good()) {
+        log_crit_printf(io, "%s:%d Server %s sends invalid ACL_CHANGE.  Disconnecting...\n",
+                        M.file(), M.line(), peerName.c_str());
+        bev.reset();
+        return;
+    }
+
+    // look up channel: check creatingByCID first (initial ACL arrives before CREATE_CHANNEL response),
+    // then fall back to context->chanByCID (dynamic updates for active channels)
+    std::shared_ptr<Channel> chan;
+    {
+        auto it = creatingByCID.find(cid);
+        if(it!=creatingByCID.end()) {
+            chan = it->second.lock();
+        }
+        if(!chan) {
+            auto it2 = context->chanByCID.find(cid);
+            if(it2!=context->chanByCID.end())
+                chan = it2->second.lock();
+        }
+    }
+
+    if(!chan) {
+        log_debug_printf(io, "Server %s ACL_CHANGE for unknown channel cid=%u\n",
+                         peerName.c_str(), unsigned(cid));
+        return;
+    }
+
+    chan->permissions = permissions;
+
+    log_debug_printf(io, "Server %s ACL_CHANGE for '%s' permissions=0x%02x\n",
+                     peerName.c_str(), chan->name.c_str(), unsigned(permissions));
+
+    auto conns(chan->connectors); // copy list
+
+    for(auto& conn : conns) {
+        if(conn->_onACL)
+            conn->_onACL(permissions);
+    }
+}
+
 void Connection::handle_CREATE_CHANNEL()
 {
     auto rxlen = 8u + evbuffer_get_length(segBuf.get());

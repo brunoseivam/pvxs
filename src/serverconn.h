@@ -90,6 +90,8 @@ struct ServerChannelControl : public server::ChannelControl
     virtual void onClose(std::function<void(const std::string&)>&& fn) override final;
     virtual void close() override final;
 
+    virtual void setPermissions(uint8_t permissions) override final;
+
     virtual void _updateInfo(const std::shared_ptr<const ReportInfo>& info) override final;
 
     const std::weak_ptr<server::Server::Pvt> server;
@@ -110,6 +112,8 @@ struct ServerChan
         Active,   // reply sent
         Destroy,  // DESTROY_CHANNEL request received and/or reply sent
     } state;
+
+    uint8_t permissions = 0x07;
 
     size_t statTx{}, statRx{};
     std::shared_ptr<const ReportInfo> reportInfo;
@@ -154,6 +158,8 @@ struct ServerConn final : public ConnBase, public std::enable_shared_from_this<S
     const std::shared_ptr<ServerChan>& lookupSID(uint32_t sid);
 
     void logRemote(uint32_t ioid, Level lvl, const std::string& msg);
+
+    void sendACL(uint32_t cid, uint8_t permissions);
 
 private:
 #define CASE(Op) virtual void handle_##Op() override final;

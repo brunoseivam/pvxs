@@ -156,6 +156,26 @@ void ServerChannelControl::close()
     });
 }
 
+void ServerChannelControl::setPermissions(uint8_t permissions)
+{
+    auto serv = server.lock();
+    if(!serv)
+        return;
+
+    serv->acceptor_loop.call([this, permissions](){
+        auto ch = chan.lock();
+        if(!ch)
+            return;
+
+        ch->permissions = permissions;
+
+        auto conn = ch->conn.lock();
+        if(conn && conn->connection() && ch->state==ServerChan::Active) {
+            conn->sendACL(ch->cid, permissions);
+        }
+    });
+}
+
 void ServerChannelControl::_updateInfo(const std::shared_ptr<const ReportInfo>& info)
 {
     auto serv = server.lock();
@@ -341,6 +361,12 @@ void ServerConn::handle_CREATE_CHANNEL()
             // ServerChannelControl destroyed it not saved by claiming Source
         }
 
+        // send initial ACL before CREATE_CHANNEL response
+        if(claimed) {
+            auto it = chanBySID.find(sid);
+            if(it!=chanBySID.end())
+                sendACL(cid, it->second->permissions);
+        }
 
         {
             (void)evbuffer_drain(txBody.get(), evbuffer_get_length(txBody.get()));

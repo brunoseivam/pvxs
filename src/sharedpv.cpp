@@ -414,6 +414,23 @@ void SharedPV::close()
     }
 }
 
+void SharedPV::setPermissions(uint8_t permissions)
+{
+    if(!impl)
+        throw std::logic_error("Empty SharedPV");
+
+    decltype(impl->channels) channels;
+    {
+        Guard G(impl->lock);
+        channels = impl->channels;
+    }
+
+    for(auto& ch : channels) {
+        if(auto chan = ch.lock())
+            chan->setPermissions(permissions);
+    }
+}
+
 void SharedPV::post(const Value& val)
 {
     if(!impl)

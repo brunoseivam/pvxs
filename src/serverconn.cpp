@@ -160,6 +160,26 @@ void ServerConn::logRemote(uint32_t ioid, Level lvl, const std::string& msg)
     enqueueTxBody(CMD_MESSAGE);
 }
 
+void ServerConn::sendACL(uint32_t cid, uint8_t permissions)
+{
+    if(!connection())
+        return;
+    {
+        (void)evbuffer_drain(txBody.get(), evbuffer_get_length(txBody.get()));
+
+        EvOutBuf R(sendBE, txBody.get());
+        to_wire(R, cid);
+        to_wire(R, permissions);
+        if(!R.good()) {
+            log_err_printf(connio, "Client %s Encode error in sendACL\n",
+                           peerName.c_str());
+            return;
+        }
+    }
+
+    enqueueTxBody(CMD_ACL_CHANGE);
+}
+
 void ServerConn::handle_ECHO()
 {
     // Client requests echo as a keep-alive check

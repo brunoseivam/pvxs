@@ -185,7 +185,9 @@ struct PVXS_API ChannelControl : public OpBase {
     //! Reference to currently attached Handler is released.
     virtual void close() =0;
 
-    // TODO: signal Rights?
+    //! Update per-channel access permissions.
+    //! Bit 0=PUT, Bit 1=PUT_GET, Bit 2=RPC.  Default 0x07 = full access.
+    virtual void setPermissions(uint8_t permissions) =0;
 
 #ifdef PVXS_EXPERT_API_ENABLED
     // Store info struct which will be returned with Report::Channel
