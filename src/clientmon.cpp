@@ -42,7 +42,7 @@ struct SubscriptionImpl final : public OperationBase, public Subscription
     Value pvRequest;
     bool pipeline = false;
     bool autostart = true;
-    bool maskConn = false, maskDiscon = true;
+    bool maskConn = false, maskDiscon = true, maskACL = true;
     uint32_t queueSize = 4u, ackAt=0u;
 
     // only access from loop
@@ -413,6 +413,35 @@ struct SubscriptionImpl final : public OperationBase, public Subscription
         }
     }
 
+    virtual void aclChanged(uint8_t permissions) override final
+    {
+        if(maskACL)
+            return;
+
+        switch(state) {
+        case Connecting:
+        case Done:
+            return;
+        default:
+            break;
+        }
+
+        bool notify = false;
+        {
+            Guard G(lock);
+            notify = queue.empty() && wantToNotify();
+
+            queue.emplace_back(std::make_exception_ptr(AclChanged(permissions)));
+
+            log_debug_printf(io, "Server %s channel %s monitor PUSH AclChanged\n",
+                            chan->conn ? chan->conn->peerName.c_str() : "<disconnected>",
+                            chan->name.c_str());
+        }
+
+        if(notify)
+            doNotify();
+    }
+
     void tickAck()
     {
         uint32_t num2ack = 0;
@@ -755,6 +784,7 @@ std::shared_ptr<Subscription> MonitorBuilder::exec()
     op->pvRequest = _buildReq();
     op->maskConn = _maskConn;
     op->maskDiscon = _maskDisconn;
+    op->maskACL = _maskACL;
     op->autostart = _autoexec;
 
     auto options = op->pvRequest["record._options"];

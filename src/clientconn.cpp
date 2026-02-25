@@ -385,6 +385,12 @@ void Connection::handle_ACL_CHANGE()
         if(conn->_onACL)
             conn->_onACL(permissions);
     }
+
+    for(auto& kv : chan->opByIOID) {
+        if(auto op = kv.second->handle.lock()) {
+            op->aclChanged(permissions);
+        }
+    }
 }
 
 void Connection::handle_CREATE_CHANNEL()

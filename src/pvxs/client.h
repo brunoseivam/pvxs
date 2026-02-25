@@ -64,6 +64,17 @@ struct PVXS_API Connected : public std::runtime_error
     const epicsTime time;
 };
 
+//! For monitor only.  Per-channel access permissions have changed.
+//! @since UNRELEASED
+struct PVXS_API AclChanged : public std::runtime_error
+{
+    explicit AclChanged(uint8_t perm);
+    virtual ~AclChanged();
+
+    //! New permissions.  Bit 0=PUT, Bit 1=PUT_GET, Bit 2=RPC.
+    const uint8_t permissions;
+};
+
 //! Operation::interrupt() called
 struct PVXS_API Interrupted : public std::runtime_error
 {
@@ -217,6 +228,7 @@ public:
      * @throws Connected (depending on MonitorBuilder::maskConnected())
      * @throws Disconnect (depending on MonitorBuilder::maskDisconnect())
      * @throws Finished  (depending on MonitorBuilder::maskDisconnect())
+     * @throws AclChanged (depending on MonitorBuilder::maskACLChange())
      * @throws RemoteError For server signaled errors
      * @throws std::exception For client side failures.
      *
@@ -886,6 +898,7 @@ class MonitorBuilder : public detail::CommonBuilder<MonitorBuilder, detail::Comm
     std::function<void(Subscription&)> _event;
     bool _maskConn = true;
     bool _maskDisconn = false;
+    bool _maskACL = true;
 public:
     MonitorBuilder() {}
     MonitorBuilder(const std::shared_ptr<Context::Pvt>& ctx, const std::string& name) :CommonBuilder{ctx,name} {}
@@ -902,6 +915,9 @@ public:
     MonitorBuilder& maskConnected(bool m = true) { _maskConn = m; return *this; }
     //! Include Disconnected exceptions in queue (default true).
     MonitorBuilder& maskDisconnected(bool m = true) { _maskDisconn = m; return *this; }
+    //! Include AclChanged exceptions in queue (default false).
+    //! @since UNRELEASED
+    MonitorBuilder& maskACLChange(bool m = true) { _maskACL = m; return *this; }
 
 #ifdef PVXS_EXPERT_API_ENABLED
     // called during operation INIT phase for Get/Put/Monitor when remote type

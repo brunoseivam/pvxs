@@ -95,6 +95,13 @@ Connected::Connected(const std::string& peerName)
 
 Connected::~Connected() {}
 
+AclChanged::AclChanged(uint8_t perm)
+    :std::runtime_error("AclChanged")
+    ,permissions(perm)
+{}
+
+AclChanged::~AclChanged() {}
+
 Interrupted::Interrupted()
     :std::runtime_error ("Interrupted")
 {}
@@ -352,6 +359,8 @@ uint8_t OperationBase::permissions() const
         return chan->permissions;
     return 0x07;
 }
+
+void OperationBase::aclChanged(uint8_t /*permissions*/) {}
 
 RequestInfo::RequestInfo(uint32_t sid, uint32_t ioid, std::shared_ptr<OperationBase>& handle)
     :sid(sid)

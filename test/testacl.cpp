@@ -170,6 +170,106 @@ struct Tester {
         serv.stop();
     }
 
+    void testSubscriptionAclChanged()
+    {
+        testShow()<<__func__;
+
+        mbox.open(initial);
+        serv.start();
+
+        epicsEvent update;
+        auto sub = cli.monitor("mailbox")
+                .maskConnected(true)
+                .maskDisconnected(true)
+                .maskACLChange(false) // enable AclChanged notifications
+                .event([&update](client::Subscription&) {
+                    update.signal();
+                })
+                .exec();
+
+        // wait for initial update
+        testTrue(update.wait(5.0))<<" Wait for subscription update";
+        auto val = sub->pop();
+        testTrue(!!val)<<" Got subscription value";
+        while(sub->pop()) {} // drain remaining entries
+
+        // Change permissions from server side
+        mbox.setPermissions(0x01); // PUT only
+
+        // Wait for AclChanged - loop following testmon.cpp pattern,
+        // so a spurious event wake doesn't cause us to miss the exception.
+        uint8_t caughtPerm = 0xff;
+        try {
+            while(true) {
+                if(sub->pop()) continue; // skip any stray values
+                if(!update.wait(5.0))
+                    testAbort("Timeout waiting for AclChanged notification");
+            }
+        } catch(client::AclChanged& e) {
+            caughtPerm = e.permissions;
+        } catch(std::exception& e) {
+            testFail("Unexpected exception: %s", e.what());
+        }
+        testEq(caughtPerm, 0x01u)<<" AclChanged carries correct permissions";
+        testEq(sub->permissions(), 0x01u)<<" Permissions updated via polling";
+
+        serv.stop();
+    }
+
+    void testSubscriptionAclChangedMasked()
+    {
+        testShow()<<__func__;
+
+        mbox.open(initial);
+        serv.start();
+
+        epicsEvent update;
+        epicsEvent aclEvt;
+        std::atomic<uint8_t> gotPerm{0xff};
+
+        // Subscribe with default maskACLChange (true = suppress AclChanged)
+        auto sub = cli.monitor("mailbox")
+                .maskConnected(true)
+                .maskDisconnected(true)
+                .event([&update](client::Subscription&) {
+                    update.signal();
+                })
+                .exec();
+
+        // Use a Connect on the same channel to know when the ACL update
+        // has been processed by the event loop, without relying on a sleep.
+        auto conn = cli.connect("mailbox")
+                .onPermissions([&gotPerm, &aclEvt](uint8_t perm) {
+                    gotPerm = perm;
+                    aclEvt.signal();
+                })
+                .exec();
+
+        // wait for initial subscription value
+        testTrue(update.wait(5.0))<<" Wait for subscription update";
+        auto val = sub->pop();
+        testTrue(!!val)<<" Got subscription value";
+        while(sub->pop()) {} // drain
+
+        // Change permissions from server side
+        mbox.setPermissions(0x01);
+
+        // Wait for the ACL update to arrive via the connect callback.
+        // handle_ACL_CHANGE() sets chan->permissions then calls connector
+        // callbacks before operation callbacks, so once onPermissions fires
+        // the event loop is done with the ACL update for this channel.
+        while(gotPerm.load() != 0x01) {
+            if(!aclEvt.wait(5.0))
+                break;
+        }
+        testEq(gotPerm.load(), 0x01u)<<" ACL change received on channel";
+
+        // The subscription queue must be empty: AclChanged is suppressed by default
+        testFalse(sub->pop())<<" No AclChanged in queue when masked (default)";
+
+        serv.stop();
+    }
+
     void testACLResetOnDisconnect()
     {
         testShow()<<__func__;
@@ -301,13 +401,15 @@ void testCustomInitialPermissions()
 
 MAIN(testacl)
 {
-    testPlan(24);
+    testPlan(32);
     testSetup();
     logger_config_env();
     Tester().testDefaultPermissions();
     Tester().testDynamicACLChange();
     Tester().testOperationPermissions();
     Tester().testSubscriptionPermissions();
+    Tester().testSubscriptionAclChanged();
+    Tester().testSubscriptionAclChangedMasked();
     Tester().testACLResetOnDisconnect();
     testCustomInitialPermissions();
     cleanup_for_valgrind();
